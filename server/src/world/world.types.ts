@@ -78,6 +78,67 @@ export interface WorldMapPayload {
   countries: FeatureCollection<CountryFeatureProperties>;
 }
 
+export interface ProvinceSummary {
+  id: string;
+  name: string;
+  population: number;
+  terrain: string;
+  resources: string[];
+  infrastructure: number;
+  currentOwner: string;
+  currentController: string;
+  area: number;
+}
+
+export interface CountryProfile extends CountryFeatureProperties {
+  description: string;
+  area: number;
+  resources: string[];
+  isAdminEdited: boolean;
+  economy: {
+    gdpGrowth: number;
+    inflation: number;
+    debt: number;
+    currency: string;
+    tradeBalance: number;
+    resourceProduction: Array<{ resource: string; output: number; unit: string }>;
+  };
+  military: {
+    personnel: number;
+    army: number;
+    navy: number;
+    airForce: number;
+    equipment: { tanks: number; aircraft: number; ships: number; artillery: number };
+    bases: Array<{ name: string; province: string; branch: 'army' | 'navy' | 'air'; personnel: number }>;
+    deployments: Array<{
+      name: string;
+      province: string;
+      strength: number;
+      status: 'garrison' | 'deployed' | 'exercising';
+    }>;
+  };
+  diplomacy: {
+    status: string;
+    alliances: string[];
+    treaties: Array<{ name: string; partner: string; signedAt: string }>;
+    rivals: string[];
+    sanctions: string[];
+    tradePartners: string[];
+  };
+  government: {
+    environment: string;
+    ideology: string;
+    rulingParty: string;
+    nextElection: string | null;
+  };
+  history: Array<{
+    at: string;
+    title: string;
+    detail: string;
+    kind: 'foundation' | 'government' | 'territory' | 'administration';
+  }>;
+}
+
 export interface CountryDetailPayload {
   country: CountryFeatureProperties & { description: string };
   provinces: Array<{

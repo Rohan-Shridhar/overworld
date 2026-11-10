@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   countryInsertMany: vi.fn(),
   provinceInsertMany: vi.fn(),
   countryFind: vi.fn(),
+  countryUpdateOne: vi.fn(),
+  provinceFind: vi.fn(),
   provinceAggregate: vi.fn(),
 }));
 
@@ -15,11 +17,19 @@ vi.mock('../src/models/world.model.js', () => ({
 }));
 
 vi.mock('../src/models/country.model.js', () => ({
-  CountryModel: { insertMany: mocks.countryInsertMany, find: mocks.countryFind },
+  CountryModel: {
+    insertMany: mocks.countryInsertMany,
+    find: mocks.countryFind,
+    updateOne: mocks.countryUpdateOne,
+  },
 }));
 
 vi.mock('../src/models/province.model.js', () => ({
-  ProvinceModel: { insertMany: mocks.provinceInsertMany, aggregate: mocks.provinceAggregate },
+  ProvinceModel: {
+    insertMany: mocks.provinceInsertMany,
+    aggregate: mocks.provinceAggregate,
+    find: mocks.provinceFind,
+  },
 }));
 
 const { ensureDefaultWorld, resetWorldCache } = await import('../src/world/world.service.js');
@@ -62,6 +72,10 @@ describe('world persistence', () => {
     mocks.provinceInsertMany.mockImplementation(
       async (documents: Array<Record<string, unknown>>) => documents,
     );
+    // The profile backfill reads existing countries and provinces; nothing to top up here.
+    mocks.countryFind.mockReturnValue({ lean: async () => [] });
+    mocks.provinceFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+    mocks.countryUpdateOne.mockResolvedValue({ acknowledged: true });
   });
 
   it('creates the world, its countries and its provinces exactly once', async () => {

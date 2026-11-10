@@ -15,6 +15,8 @@ const provinceSchema = new Schema(
     infrastructure: { type: Number, required: true, min: 0, max: 100 },
     currentOwner: { type: String, required: true, index: true },
     currentController: { type: String, required: true, index: true },
+    /** Approximate area in square degrees, used for territorial totals. */
+    area: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true, versionKey: false, collection: 'provinces' },
 );

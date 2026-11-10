@@ -213,6 +213,13 @@ export function samplePointsInRing(
   return points;
 }
 
+/** Total area of a geometry in square degrees (planar approximation). */
+export function geometryArea(geometry: Geometry): number {
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+
+  return polygons.reduce((total, rings) => total + ringArea(rings[0] ?? []), 0);
+}
+
 export function ringArea(ring: Ring): number {
   let area = 0;
 

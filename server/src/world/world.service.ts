@@ -5,9 +5,9 @@ import { WorldModel, type World } from '../models/world.model.js';
 import { AppError } from '../utils/app-error.js';
 import { generateWorld, type GeneratedWorld } from './generator/world-generator.js';
 import type { Geometry, Position } from './generator/geometry.js';
+import { backfillCountryProfiles } from './profile-backfill.js';
 import { DEFAULT_WORLD_SEED, DEFAULT_WORLD_SLUG } from './world.constants.js';
 import type {
-  CountryDetailPayload,
   CountryFeatureProperties,
   FeatureCollection,
   ProvinceFeatureProperties,
@@ -57,6 +57,13 @@ async function persistGeneratedWorld(worldId: Types.ObjectId, plan: GeneratedWor
       stability: country.stability,
       geometry: country.geometry,
       centroid: country.centroid,
+      area: country.area,
+      resources: country.resources,
+      economy: country.economy,
+      military: country.military,
+      diplomacy: country.diplomacy,
+      government: country.government,
+      history: country.history,
     })),
     { ordered: true },
   );
@@ -91,6 +98,7 @@ function generateProvinceDocuments(
       infrastructure: province.infrastructure,
       currentOwner: province.currentOwner,
       currentController: province.currentController,
+      area: province.area,
     }));
   });
 }
@@ -131,12 +139,20 @@ async function initialiseWorld(): Promise<LeanWorld> {
   return world;
 }
 
-/** Idempotent: the default world is generated exactly once per database. */
+/**
+ * Idempotent: the default world is generated exactly once per database, then
+ * existing countries are topped up with the profile records they are missing.
+ */
 export async function ensureDefaultWorld(): Promise<LeanWorld> {
-  worldPromise ??= initialiseWorld().catch((error: unknown) => {
-    worldPromise = null;
-    throw error;
-  });
+  worldPromise ??= initialiseWorld()
+    .then(async (world) => {
+      await backfillCountryProfiles(world._id);
+      return world;
+    })
+    .catch((error: unknown) => {
+      worldPromise = null;
+      throw error;
+    });
 
   return worldPromise;
 }
@@ -272,37 +288,7 @@ export async function getProvinceFeatures(
   };
 }
 
-/** Detail panel payload for one country. */
-export async function getCountryDetail(code: string): Promise<CountryDetailPayload> {
-  const world = await ensureDefaultWorld();
-
-  const country = (await CountryModel.findOne({
-    worldId: world._id,
-    shortCode: code.toUpperCase(),
-  }).lean()) as unknown as LeanCountry | null;
-
-  if (!country) {
-    throw AppError.notFound(`No country with the code "${code.toUpperCase()}"`);
-  }
-
-  const provinces = (await ProvinceModel.find({ countryId: country._id })
-    .sort({ name: 1 })
-    .lean()) as unknown as LeanProvince[];
-
-  return {
-    country: {
-      ...toCountryFeatures(country, provinces.length).properties,
-      description: country.description ?? '',
-    },
-    provinces: provinces.map((province) => ({
-      id: String(province._id),
-      name: province.name,
-      population: province.population,
-      terrain: province.terrain,
-      resources: province.resources ?? [],
-      infrastructure: province.infrastructure,
-      currentOwner: province.currentOwner,
-      currentController: province.currentController,
-    })),
-  };
-}
+/*
+ * The dossier payload lives in country.service (getCountryProfile plus
+ * getCountryProvinces), so this module only serves the map itself.
+ */

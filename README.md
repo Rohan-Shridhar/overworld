@@ -74,6 +74,7 @@ Fix the URI and restart.
 │   │   │   ├── landing/        Page sections
 │   │   │   ├── layout/         Header, footer, page shell
 │   │   │   ├── motion/         Scroll reveal
+│   │   │   ├── world/          Map, top bar, directory, dossier, forms, legend, events
 │   │   │   └── ui/             shadcn/ui primitives
 │   │   ├── config/             Source-controlled app + dev server configuration
 │   │   ├── hooks/              Health, socket, reveal and uptime hooks
@@ -123,7 +124,13 @@ Fix the URI and restart.
 | `GET` | `/api/health` | `200` when MongoDB is reachable, `503` when it is not |
 | `GET` | `/api/world` | World metadata plus all countries as a GeoJSON `FeatureCollection` |
 | `GET` | `/api/world/provinces` | Province boundaries; optional `?countryId=` scopes it to one state |
-| `GET` | `/api/world/countries/:code` | One country with its provinces, for the dossier panel |
+| `GET` | `/api/world/countries/:code` | One country profile (all seven dossier tabs) plus its provinces |
+| `POST` | `/api/world/countries` | Creates a state and claims unoccupied territory in a continent |
+| `PATCH` | `/api/world/countries/:code` | Updates country statistics and appends an administration entry to its history |
+| `DELETE` | `/api/world/countries/:code` | Removes a state and its provinces; the last state cannot be deleted |
+| `POST` | `/api/world/countries/:code/provinces` | Adds a province inside that country and recalculates its area |
+| `PATCH` | `/api/world/provinces/:id` | Updates a province's name, population, terrain, resources or infrastructure |
+| `POST` | `/api/world/provinces/:id/transfer` | Administrative transfer of a province to another state |
 
 `GET /api/health?detail=full` additionally probes the database (ping plus a bounded scenario count)
 and returns:
@@ -163,10 +170,47 @@ The world is generated, not authored:
 - The generated world is persisted once. `ensureDefaultWorld()` memoises the in-flight bootstrap and
   the unique `worlds.slug` index rejects a second insert, so refreshes and parallel requests reuse
   the existing world instead of regenerating or duplicating it.
+- `backfillCountryProfiles()` runs once per boot and tops up worlds written before a field existed:
+  missing economy, military, diplomacy, government, description and history records are generated
+  deterministically, and province areas are measured from their stored geometry. Records that are
+  already present, including administrator edits, are never overwritten.
 
 Map modes: **Political** is fully implemented (each state painted in its own colour). Diplomatic,
 Military, Economic, Resources and Territorial Control ship with their legend and an explicit
 "data arrives with the simulation engine" note.
+
+### Country dossier
+
+Selecting a state on the map, or picking it from the directory, opens the right-hand dossier:
+
+| Tab | Contents |
+| --- | --- |
+| Overview | Capital, continent, population, GDP, government, leader, diplomatic status, provinces, stability |
+| Economy | GDP growth, inflation, debt, currency, trade balance, production by resource |
+| Military | Personnel by branch, equipment counts, installations, deployments |
+| Diplomacy | Status, alliances, treaties, rivals, sanctions, trade partners |
+| Government | Type, leader, ideology, ruling party, stability, next election |
+| Territory | Derived area, province list, population share, resource spread |
+| History | Country events, newest first |
+
+Every field is stored state read from MongoDB; the client only formats values and aggregates the
+province figures shown in Territory.
+
+The directory panel above it carries a search field, continent filters and three sort orders
+(name, population, GDP), so a state can be reached without hunting for its shape on the map.
+
+### Administrative editing (God Mode)
+
+The shield control in the top bar toggles God Mode, which reveals the administrative actions:
+
+- **Create country** — validates name, code, capital, colour, population, GDP, government, leader
+  and stability, then places the state in unoccupied space inside the chosen continent and derives
+  its area from the claimed geometry.
+- **Edit country** — the whole profile, economy and military figures included; every save appends an
+  administration entry to the country history.
+- **Delete country** — deletes the state and its provinces, but refuses to remove the last state.
+- **Province management** — add or edit provinces, and transfer one to another state. Ownership,
+  controller and the area of both affected countries move together, and both histories record it.
 
 ## Development routing
 

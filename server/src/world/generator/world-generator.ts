@@ -20,6 +20,7 @@ import {
 import {
   clipRingToGeometry,
   createRadialRing,
+  geometryArea,
   polygonBounds,
   polygonCentroid,
   samplePointsInRing,
@@ -27,6 +28,16 @@ import {
   type Geometry,
   type Position,
 } from './geometry.js';
+import {
+  buildDiplomacy,
+  buildEconomy,
+  buildGovernance,
+  buildMilitary,
+  type CountryDiplomacy,
+  type CountryEconomy,
+  type CountryGovernance,
+  type CountryMilitary,
+} from './profile.js';
 import { createRandom, type SeededRandom } from './seeded-random.js';
 
 export interface GeneratedProvince {
@@ -39,6 +50,7 @@ export interface GeneratedProvince {
   infrastructure: number;
   currentOwner: string;
   currentController: string;
+  area: number;
 }
 
 export interface GeneratedCountry {
@@ -56,6 +68,13 @@ export interface GeneratedCountry {
   stability: number;
   geometry: Geometry;
   centroid: Position;
+  area: number;
+  resources: string[];
+  economy: CountryEconomy;
+  military: CountryMilitary;
+  diplomacy: CountryDiplomacy;
+  government: CountryGovernance;
+  history: Array<{ at: Date; title: string; detail: string; kind: string }>;
   provinces: GeneratedProvince[];
 }
 
@@ -175,10 +194,36 @@ function generateProvinces(
       infrastructure: random.int(18, 94),
       currentOwner: countryName,
       currentController: countryName,
+      area: Math.round(geometryArea(provinceGeometry) * 1000) / 1000,
     });
   });
 
   return provinces;
+}
+
+/**
+ * Continent outlines only — used when an administrator creates a country and needs
+ * to know which land the new state may occupy.
+ */
+export function buildContinentRings(seed: string): Array<{ name: string; geometry: Geometry }> {
+  const random = createRandom(`${seed}:continents`);
+
+  return CONTINENTS.map((continent) => ({
+    name: continent.name,
+    geometry: {
+      type: 'Polygon' as const,
+      coordinates: [
+        createRadialRing(
+          continent.center,
+          continent.radius[0],
+          continent.radius[1],
+          22,
+          random,
+          0.34,
+        ),
+      ],
+    },
+  }));
 }
 
 /**
@@ -229,6 +274,7 @@ export function generateWorld(seed: string = DEFAULT_WORLD_SEED): GeneratedWorld
       const governmentType = random.pick(GOVERNMENT_TYPES);
       const provinces = generateProvinces(name, geometry, random, usedProvinceNames);
       const terrains = [...new Set(provinces.map((province) => province.terrain))].slice(0, 2);
+      const resources = [...new Set(provinces.flatMap((province) => province.resources))];
 
       countries.push({
         name,
@@ -245,12 +291,42 @@ export function generateWorld(seed: string = DEFAULT_WORLD_SEED): GeneratedWorld
         stability: random.int(26, 94),
         geometry,
         centroid: polygonCentroid(geometry),
+        area: Math.round(provinces.reduce((sum, province) => sum + province.area, 0) * 100) / 100,
+        resources,
+        economy: buildEconomy(random, resources),
+        military: buildMilitary(random, population, provinces.map((province) => province.name)),
+        diplomacy: {
+          status: 'Neutral',
+          alliances: [],
+          treaties: [],
+          rivals: [],
+          sanctions: [],
+          tradePartners: [],
+        },
+        government: buildGovernance(random, governmentType, 2031),
+        history: [
+          {
+            at: new Date(Date.UTC(2031, 0, 1)),
+            title: 'State founded',
+            detail: `${name} enters the world record with ${provinces.length} provinces.`,
+            kind: 'foundation',
+          },
+        ],
         provinces,
       });
 
       colourIndex += 1;
     });
   }
+
+  // Diplomacy is a second pass: every reference must point at a country that exists.
+  countries.forEach((country) => {
+    const otherNames = countries
+      .filter((other) => country.shortCode !== other.shortCode)
+      .map((other) => other.name);
+
+    country.diplomacy = buildDiplomacy(random, otherNames);
+  });
 
   return {
     name: DEFAULT_WORLD_NAME,

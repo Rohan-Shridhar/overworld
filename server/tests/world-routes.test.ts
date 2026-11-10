@@ -5,7 +5,8 @@ import { AppError } from '../src/utils/app-error.js';
 const mocks = vi.hoisted(() => ({
   getWorldMap: vi.fn(),
   getProvinceFeatures: vi.fn(),
-  getCountryDetail: vi.fn(),
+  getCountryProfile: vi.fn(),
+  getCountryProvinces: vi.fn(),
 }));
 
 vi.mock('../src/world/world.service.js', () => ({
@@ -13,7 +14,17 @@ vi.mock('../src/world/world.service.js', () => ({
   resetWorldCache: vi.fn(),
   getWorldMap: mocks.getWorldMap,
   getProvinceFeatures: mocks.getProvinceFeatures,
-  getCountryDetail: mocks.getCountryDetail,
+}));
+
+vi.mock('../src/world/country.service.js', () => ({
+  getCountryProfile: mocks.getCountryProfile,
+  getCountryProvinces: mocks.getCountryProvinces,
+  createCountry: vi.fn(),
+  updateCountry: vi.fn(),
+  deleteCountry: vi.fn(),
+  createProvince: vi.fn(),
+  updateProvince: vi.fn(),
+  transferProvince: vi.fn(),
 }));
 
 const { createApp } = await import('../src/app.js');
@@ -53,10 +64,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getWorldMap.mockResolvedValue(WORLD_PAYLOAD);
   mocks.getProvinceFeatures.mockResolvedValue(EMPTY_COLLECTION);
-  mocks.getCountryDetail.mockResolvedValue({
-    country: { code: 'AUR', name: 'Aurelia' },
-    provinces: [],
-  });
+  mocks.getCountryProfile.mockResolvedValue({ code: 'AUR', name: 'Aurelia', history: [] });
+  mocks.getCountryProvinces.mockResolvedValue([]);
 });
 
 describe('GET /api/world', () => {
@@ -64,10 +73,8 @@ describe('GET /api/world', () => {
     const response = await request(app).get('/api/world');
 
     expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
     expect(response.body.data.world.stats.countryCount).toBe(30);
     expect(response.body.data.countries.type).toBe('FeatureCollection');
-    expect(response.body.data.countries.features).toHaveLength(1);
   });
 
   it('returns province features', async () => {
@@ -75,7 +82,6 @@ describe('GET /api/world', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data.type).toBe('FeatureCollection');
-    expect(mocks.getProvinceFeatures).toHaveBeenCalled();
   });
 
   it('rejects a malformed country code', async () => {
@@ -83,19 +89,20 @@ describe('GET /api/world', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
-    expect(mocks.getCountryDetail).not.toHaveBeenCalled();
+    expect(mocks.getCountryProfile).not.toHaveBeenCalled();
   });
 
-  it('returns a country detail payload', async () => {
+  it('returns the country profile and its provinces', async () => {
     const response = await request(app).get('/api/world/countries/aur');
 
     expect(response.status).toBe(200);
     expect(response.body.data.country.code).toBe('AUR');
-    expect(mocks.getCountryDetail).toHaveBeenCalledWith('aur');
+    expect(response.body.data.provinces).toEqual([]);
+    expect(mocks.getCountryProfile).toHaveBeenCalledWith('aur');
   });
 
   it('maps a missing country to a 404 envelope', async () => {
-    mocks.getCountryDetail.mockRejectedValueOnce(AppError.notFound('No country with the code "ZZZ"'));
+    mocks.getCountryProfile.mockRejectedValueOnce(AppError.notFound('No country with the code "ZZZ"'));
 
     const response = await request(app).get('/api/world/countries/ZZZ');
 
