@@ -10,8 +10,8 @@ tooling that keeps both halves honest.
 
 | Layer | Stack |
 | --- | --- |
-| Client | React, TypeScript, Vite, Tailwind CSS, shadcn/ui, React Router, Zustand, TanStack Query, Lucide React |
-| Server | Node.js, Express.js, TypeScript, MongoDB Atlas, Mongoose, Socket.IO, Zod |
+| Client | React, TypeScript, Vite, Tailwind CSS, shadcn/ui, React Router, Zustand, TanStack Query, Lucide React, MapLibre GL JS |
+| Server | Node.js, Express.js, TypeScript, MongoDB Atlas, Mongoose, Socket.IO, Zod, d3-delaunay, polygon-clipping |
 | Testing | Vitest, Supertest, React Testing Library |
 | Workspace | npm workspaces, ESLint, Prettier |
 
@@ -121,6 +121,9 @@ Fix the URI and restart.
 | --- | --- | --- |
 | `GET` | `/api` | Service name, version and the endpoint index |
 | `GET` | `/api/health` | `200` when MongoDB is reachable, `503` when it is not |
+| `GET` | `/api/world` | World metadata plus all countries as a GeoJSON `FeatureCollection` |
+| `GET` | `/api/world/provinces` | Province boundaries; optional `?countryId=` scopes it to one state |
+| `GET` | `/api/world/countries/:code` | One country with its provinces, for the dossier panel |
 
 `GET /api/health?detail=full` additionally probes the database (ping plus a bounded scenario count)
 and returns:
@@ -141,6 +144,29 @@ and returns:
 
 An unsupported `detail` value returns `400` with `error.code: "VALIDATION_ERROR"`. Every error
 response uses the same envelope: `{ success: false, error: { code, message, details? } }`.
+
+## World atlas
+
+`/world` is the primary interface: a MapLibre GL map filling the viewport with a map-mode rail, a
+searchable state list, a country dossier and a world-event panel. Every border, name, capital and
+leader is fictional.
+
+The world is generated, not authored:
+
+- Six continents are placed on a fictional lon/lat plane as irregular rings.
+- Country seeds are sampled inside each continent and turned into Voronoi cells, clipped to the
+  continent boundary by `polygon-clipping` (MIT). Cells tile the land exactly, so there are no gaps
+  or overlaps.
+- Provinces repeat the same process inside each country, three to five per state.
+- All randomness comes from a `mulberry32` generator seeded by `DEFAULT_WORLD_SEED`
+  (`server/src/world/world.constants.ts`), so the same seed always produces the same world.
+- The generated world is persisted once. `ensureDefaultWorld()` memoises the in-flight bootstrap and
+  the unique `worlds.slug` index rejects a second insert, so refreshes and parallel requests reuse
+  the existing world instead of regenerating or duplicating it.
+
+Map modes: **Political** is fully implemented (each state painted in its own colour). Diplomatic,
+Military, Economic, Resources and Territorial Control ship with their legend and an explicit
+"data arrives with the simulation engine" note.
 
 ## Development routing
 
