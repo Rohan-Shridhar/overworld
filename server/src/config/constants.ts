@@ -104,8 +104,27 @@ export const SERVERLESS_MAX_DAYS_PER_REQUEST = 12 as const;
 /** Wall-clock budget for the advancement pass, leaving room to serialise a response. */
 export const SERVERLESS_TIME_BUDGET_MS = 6_500 as const;
 
-/** Atlas selection timeout used inside a function, where a slow query is fatal. */
-export const DB_SERVERLESS_SELECTION_TIMEOUT_MS = 8_000 as const;
+/**
+ * Atlas selection timeout used inside a function.
+ *
+ * Deliberately shorter than the 10 s Hobby limit: a failed connection must
+ * surface as a 503 while the request can still be answered.
+ */
+export const DB_SERVERLESS_SELECTION_TIMEOUT_MS = 5_000 as const;
+
+/** TCP/TLS handshake bound for a cold serverless connect. */
+export const DB_SERVERLESS_CONNECT_TIMEOUT_MS = 6_000 as const;
+
+/**
+ * Connection pool size.
+ *
+ * Each warm serverless instance keeps its own pool, and Atlas M0 allows ~500
+ * connections in total, so the per-instance ceiling stays small.
+ */
+export const DB_SERVERLESS_POOL_SIZE = 5 as const;
+
+/** Pool size for a long-lived process, which serves every request itself. */
+export const DB_LOCAL_POOL_SIZE = 10 as const;
 
 /** One attempt per invocation: a retry loop cannot fit inside a function budget. */
 export const DB_SERVERLESS_MAX_ATTEMPTS = 1 as const;

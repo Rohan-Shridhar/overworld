@@ -269,6 +269,29 @@ prevent that:
 `server/src/app.ts` also default-exports an app instance, because the Express service
 imports a module and expects an Express app, not a factory.
 
+### Database connection lifecycle
+
+A Vercel function has no boot phase: the module is imported and a request arrives
+immediately. `server/src/server.ts` (which connects at boot) is never executed by the
+Express service, so the connection is opened as part of the **request** instead:
+
+1. `databaseReady()` middleware runs before the router.
+2. `isDatabaseReady()` (`readyState === 1`) short-circuits warm instances.
+3. Otherwise `ensureDatabaseConnection()` joins an in-flight attempt or starts one.
+4. The request is routed only after a live socket exists.
+5. If it cannot connect, the API answers `503 DATABASE_UNAVAILABLE` with the ready
+   state and a credential-free reason. `/api/health` is exempt and reports `degraded`.
+
+`bufferCommands` is disabled, so a query against a disconnected instance fails
+immediately instead of sitting inside a 10 s buffering timeout — the exact symptom
+that hid this problem. The pool is 5 connections per serverless instance (Atlas free
+tier) and 10 for a long-lived process. Connections are never closed per request; a
+failed attempt clears the cached promise so the next request retries.
+
+Connection logs cover attempt started, established, reused, failed, disconnected,
+ready state and timeouts. Connection strings are scrubbed from every message.
+`MONGODB_URI` is read from `process.env`; no `.env` file is deployed or required.
+
 ### Simulation progression
 
 MongoDB is the only authoritative clock. A world stores `currentSimulationDate`,

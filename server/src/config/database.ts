@@ -1,13 +1,16 @@
 import mongoose from 'mongoose';
 import { logger } from '../lib/logger.js';
 import {
-  DB_BUFFER_TIMEOUT_MS,
   DB_CONNECT_MAX_ATTEMPTS,
   DB_CONNECT_RETRY_DELAY_MS,
+  DB_LOCAL_POOL_SIZE,
+  DB_SERVERLESS_CONNECT_TIMEOUT_MS,
   DB_SERVERLESS_MAX_ATTEMPTS,
+  DB_SERVERLESS_POOL_SIZE,
   DB_SERVERLESS_SELECTION_TIMEOUT_MS,
   DB_SERVER_SELECTION_TIMEOUT_MS,
   isProduction,
+  isServerlessRuntime,
 } from './constants.js';
 import { EnvValidationError, getEnv } from './env.js';
 
@@ -39,17 +42,44 @@ function registerConnectionListeners(): void {
 
   mongoose.connection.on('connected', () => {
     lastConnectionError = null;
-    logger.info('MongoDB connection established', { database: mongoose.connection.name });
+    logger.info('MongoDB connection established', {
+      database: mongoose.connection.name,
+      readyState: mongoose.connection.readyState,
+    });
   });
 
   mongoose.connection.on('disconnected', () => {
-    logger.warn('MongoDB connection lost');
+    // Never log the URI: it carries credentials.
+    logger.warn('MongoDB disconnected', {
+      readyState: mongoose.connection.readyState,
+      reason: lastConnectionError,
+    });
   });
 
   mongoose.connection.on('error', (error: Error) => {
-    lastConnectionError = error.message;
-    logger.error('MongoDB connection error', { error });
+    lastConnectionError = sanitiseMongoMessage(error.message);
+    logger.error('MongoDB connection error', {
+      name: error.name,
+      reason: lastConnectionError,
+      readyState: mongoose.connection.readyState,
+    });
   });
+}
+
+/**
+ * Strips connection strings out of driver messages.
+ *
+ * Atlas errors can echo the URI, which contains the username, password and
+ * cluster hosts. Nothing derived from a connection string reaches a log line,
+ * an HTTP response or a health payload.
+ */
+export function sanitiseMongoMessage(message: string): string {
+  return message.replace(/mongodb(\+srv)?:\/\/[^\s"']+/gi, 'mongodb://***');
+}
+
+/** The single check the request lifecycle and services should trust. */
+export function isDatabaseReady(): boolean {
+  return mongoose.connection.readyState === 1;
 }
 
 export interface ConnectOptions {
@@ -67,32 +97,58 @@ export interface ConnectOptions {
 export async function connectDatabase(uri?: string, options: ConnectOptions = {}): Promise<boolean> {
   registerConnectionListeners();
   mongoose.set('strictQuery', true);
-  mongoose.set('bufferTimeoutMS', DB_BUFFER_TIMEOUT_MS);
+
+  /*
+   * Buffering is what turns a missing connection into a misleading timeout:
+   * the query waits, then fails with `buffering timed out` long after the
+   * request could have been answered. With buffering off, a query against a
+   * disconnected instance fails immediately and surfaces as a 503.
+   */
+  mongoose.set('bufferCommands', false);
 
   if (!uri) {
     lastConnectionError = 'MONGODB_URI is not configured';
-    logger.warn('Skipping MongoDB connection: MONGODB_URI is not configured');
+    logger.warn('Skipping MongoDB connection: MONGODB_URI is not configured', {
+      readyState: mongoose.connection.readyState,
+    });
     return false;
   }
 
   const attempts = options.attempts ?? DB_CONNECT_MAX_ATTEMPTS;
   const selectionTimeoutMS = options.selectionTimeoutMS ?? DB_SERVER_SELECTION_TIMEOUT_MS;
   const retryDelayMs = options.retryDelayMs ?? DB_CONNECT_RETRY_DELAY_MS;
+  const serverless = isServerlessRuntime();
+  const poolSize = serverless ? DB_SERVERLESS_POOL_SIZE : DB_LOCAL_POOL_SIZE;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    logger.info('MongoDB connect attempt started', {
+      attempt,
+      of: attempts,
+      serverless,
+      readyState: mongoose.connection.readyState,
+      selectionTimeoutMS,
+      poolSize,
+    });
+
     try {
       await mongoose.connect(uri, {
         serverSelectionTimeoutMS: selectionTimeoutMS,
+        connectTimeoutMS: serverless ? DB_SERVERLESS_CONNECT_TIMEOUT_MS : selectionTimeoutMS,
         autoIndex: !isProduction(),
-        maxPoolSize: 10,
+        maxPoolSize: poolSize,
+        minPoolSize: 0,
       });
       return true;
     } catch (error) {
-      lastConnectionError = error instanceof Error ? error.message : String(error);
+      const raw = error instanceof Error ? error.message : String(error);
+
+      lastConnectionError = sanitiseMongoMessage(raw);
       logger.warn('MongoDB connection attempt failed', {
         attempt,
         of: attempts,
+        readyState: mongoose.connection.readyState,
         reason: lastConnectionError,
+        timedOut: /timed out|server selection/i.test(raw),
       });
 
       if (attempt < attempts) {
@@ -135,20 +191,78 @@ let pendingConnection: Promise<boolean> | null = null;
 export async function ensureDatabaseConnection(uri?: string): Promise<boolean> {
   registerConnectionListeners();
 
-  if (mongoose.connection.readyState === 1) return true;
+  if (isDatabaseReady()) {
+    logger.debug('MongoDB connection reused', {
+      database: mongoose.connection.name,
+      readyState: mongoose.connection.readyState,
+    });
+    return true;
+  }
 
-  if (pendingConnection) return pendingConnection;
+  // A long-lived process may already be dialling; join that attempt instead of
+  // opening a second connection.
+  if (mongoose.connection.readyState === 2 && !pendingConnection) {
+    logger.debug('Joining connection already in progress', { readyState: 2 });
+    await mongoose.connection.asPromise().catch(() => undefined);
 
-  pendingConnection = connectDatabase(uri ?? readMongoUri(), {
+    if (isDatabaseReady()) return true;
+  }
+
+  if (pendingConnection) {
+    logger.debug('Awaiting in-flight MongoDB connection attempt', {
+      readyState: mongoose.connection.readyState,
+    });
+    return pendingConnection;
+  }
+
+  const resolvedUri = uri ?? readMongoUri();
+
+  if (!resolvedUri) {
+    logger.warn('MongoDB connection skipped: MONGODB_URI is not configured', {
+      readyState: mongoose.connection.readyState,
+    });
+    return false;
+  }
+
+  pendingConnection = connectDatabase(resolvedUri, {
     attempts: DB_SERVERLESS_MAX_ATTEMPTS,
     selectionTimeoutMS: DB_SERVERLESS_SELECTION_TIMEOUT_MS,
-  }).finally(() => {
-    // Cleared either way: a later request retries instead of inheriting a
-    // permanently rejected promise.
-    pendingConnection = null;
-  });
+  })
+    .then((connected) => {
+      logger[connected ? 'info' : 'error']('MongoDB connection lifecycle settled', {
+        connected,
+        readyState: mongoose.connection.readyState,
+        serverless: isServerlessRuntime(),
+        reason: connected ? undefined : lastConnectionError,
+      });
+
+      // Only a live socket counts as success.
+      return connected && isDatabaseReady();
+    })
+    .finally(() => {
+      // Cleared either way: a later request retries instead of inheriting a
+      // permanently settled promise.
+      pendingConnection = null;
+    });
 
   return pendingConnection;
+}
+
+export interface DatabaseFailure {
+  status: DatabaseStatus;
+  readyState: number;
+  lastError: string | null;
+}
+
+/** Snapshot used by the 503 response; never contains connection details. */
+export function describeDatabaseFailure(): DatabaseFailure {
+  const snapshot = getDatabaseSnapshot();
+
+  return {
+    status: snapshot.status,
+    readyState: snapshot.readyState,
+    lastError: snapshot.lastError,
+  };
 }
 
 /** Test helper: forgets the in-flight attempt so a fresh connect can be observed. */
