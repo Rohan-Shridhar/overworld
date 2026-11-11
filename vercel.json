@@ -14,8 +14,7 @@
     },
     "server": {
       "root": "server",
-      "framework": "express",
-      "maxDuration": 300
+      "framework": "express"
     }
   },
   "rewrites": [
