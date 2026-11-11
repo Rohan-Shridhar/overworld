@@ -6,6 +6,7 @@ import {
   getSimulationSnapshot,
   updateSimulationSettings,
 } from './simulation.service.js';
+import type { SimulationSettingsPatch } from './simulation.types.js';
 
 /** GET /api/simulation — authoritative clock, settings and world statistics. */
 export async function getSimulationHandler(_request: Request, res: Response): Promise<void> {
@@ -17,7 +18,7 @@ export async function getSimulationHandler(_request: Request, res: Response): Pr
 /** PATCH /api/simulation — speed, pause, auto-advance, event and checkpoint cadence. */
 export async function updateSimulationHandler(_request: Request, res: Response): Promise<void> {
   const body = getValidatedBody<SimulationSettingsBody>(res);
-  const snapshot = await updateSimulationSettings(body);
+  const snapshot = await updateSimulationSettings(body as SimulationSettingsPatch);
 
   res.json({ success: true, data: snapshot });
 }

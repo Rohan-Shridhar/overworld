@@ -161,7 +161,7 @@ export async function ensureRelations(worldId: Types.ObjectId): Promise<void> {
   }
 
   if (writes.length > 0) {
-    await DiplomaticRelationModel.bulkWrite(writes, { ordered: false });
+    await DiplomaticRelationModel.bulkWrite(writes as never, { ordered: false });
   }
 
   seededWorlds.add(worldKey);
@@ -257,29 +257,29 @@ export async function adjustRelation(
   const nextScore = clamp(relation.score + (deltas.score ?? 0), RELATION_SCORE_MIN, RELATION_SCORE_MAX);
   const nextTrust = clamp(relation.trust + (deltas.trust ?? 0), 0, 100);
 
+  const update = {
+    $set: {
+      score: round(nextScore),
+      trust: round(nextTrust),
+      influence: round(clamp(relation.influence + (deltas.influence ?? 0), 0, 100)),
+      strategicImportance: round(
+        clamp(relation.strategicImportance + (deltas.strategicImportance ?? 0), 0, 100),
+      ),
+      tradeDependency: round(clamp(relation.tradeDependency + (deltas.tradeDependency ?? 0), 0, 100)),
+      militaryThreat: round(clamp(relation.militaryThreat + (deltas.militaryThreat ?? 0), 0, 100)),
+      status: deltas.status ?? relation.status,
+      lastInteractionDay: day,
+      lastInteractionAt: new Date(),
+      history: [
+        ...(relation.history ?? []),
+        { day, at: new Date(), kind, delta: deltas.score ?? 0, note },
+      ].slice(-MAX_RELATION_HISTORY),
+    },
+  };
+
   return DiplomaticRelationModel.findOneAndUpdate(
     { worldId, key: pairKey(aCode, bCode) },
-    {
-      $set: {
-        score: round(nextScore),
-        trust: round(nextTrust),
-        influence: round(clamp(relation.influence + (deltas.influence ?? 0), 0, 100)),
-        strategicImportance: round(
-          clamp(relation.strategicImportance + (deltas.strategicImportance ?? 0), 0, 100),
-        ),
-        tradeDependency: round(
-          clamp(relation.tradeDependency + (deltas.tradeDependency ?? 0), 0, 100),
-        ),
-        militaryThreat: round(clamp(relation.militaryThreat + (deltas.militaryThreat ?? 0), 0, 100)),
-        status: deltas.status ?? relation.status,
-        lastInteractionDay: day,
-        lastInteractionAt: new Date(),
-        history: [
-          ...(relation.history ?? []),
-          { day, at: new Date(), kind, delta: deltas.score ?? 0, note },
-        ].slice(-MAX_RELATION_HISTORY),
-      },
-    },
-    { new: true, lean: true },
-  );
+    update as never,
+    { new: true },
+  ).lean();
 }
