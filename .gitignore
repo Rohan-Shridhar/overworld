@@ -147,3 +147,11 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Local environment overrides (server/.env and server/.env.example are covered above)
+.env.local
+.env.*.local
+*.local
+
+# Kombai workspace scratch
+.kombai/tmp/
