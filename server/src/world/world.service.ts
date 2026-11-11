@@ -1,8 +1,18 @@
 import { Types } from 'mongoose';
+import { logger } from '../lib/logger.js';
 import { CountryModel, type Country } from '../models/country.model.js';
 import { ProvinceModel, type Province } from '../models/province.model.js';
 import { WorldModel, type World } from '../models/world.model.js';
 import { AppError } from '../utils/app-error.js';
+import {
+  DEFAULT_AUTO_ADVANCE,
+  DEFAULT_CHECKPOINT_INTERVAL_DAYS,
+  DEFAULT_EVENT_FREQUENCY,
+  DEFAULT_PAUSED,
+  DEFAULT_SPEED,
+  type EventFrequency,
+  type SimulationSpeed,
+} from '../simulation/simulation.constants.js';
 import { generateWorld, type GeneratedWorld } from './generator/world-generator.js';
 import type { Geometry, Position } from './generator/geometry.js';
 import { backfillCountryProfiles } from './profile-backfill.js';
@@ -103,7 +113,38 @@ function generateProvinceDocuments(
   });
 }
 
-async function initialiseWorld(): Promise<LeanWorld> {
+/**
+ * Worlds created before the engine existed store `speed: "paused"` as a string.
+ * The raw collection is used so Mongoose never tries to cast that value to the
+ * numeric speed the schema now expects.
+ */
+async function migrateLegacySimulationSettings(): Promise<void> {
+  const result = await WorldModel.collection.updateMany(
+    {
+      $or: [
+        { 'simulationSettings.speed': { $type: 'string' } },
+        { 'simulationSettings.paused': { $exists: false } },
+      ],
+    },
+    {
+      $set: {
+        'simulationSettings.speed': DEFAULT_SPEED,
+        'simulationSettings.paused': DEFAULT_PAUSED,
+        'simulationSettings.autoAdvance': DEFAULT_AUTO_ADVANCE,
+        'simulationSettings.eventFrequency': DEFAULT_EVENT_FREQUENCY,
+        'simulationSettings.checkpointIntervalDays': DEFAULT_CHECKPOINT_INTERVAL_DAYS,
+      },
+    },
+  );
+
+  if (result.modifiedCount > 0) {
+    logger.info('Migrated legacy simulation settings', { worlds: result.modifiedCount });
+  }
+}
+
+export async function initialiseWorld(): Promise<LeanWorld> {
+  await migrateLegacySimulationSettings();
+
   const existing = await findExistingWorld();
 
   if (existing) return existing;
@@ -122,7 +163,15 @@ async function initialiseWorld(): Promise<LeanWorld> {
       mapConfig: plan.mapConfig,
       countryCount: plan.countryCount,
       continentCount: plan.continentCount,
-      simulationSettings: plan.simulationSettings,
+      simulationSettings: {
+        speed: DEFAULT_SPEED,
+        paused: DEFAULT_PAUSED,
+        autoAdvance: DEFAULT_AUTO_ADVANCE,
+        eventFrequency: DEFAULT_EVENT_FREQUENCY,
+        checkpointIntervalDays: DEFAULT_CHECKPOINT_INTERVAL_DAYS,
+        difficulty: plan.simulationSettings?.difficulty ?? 'standard',
+        startYear: plan.simulationSettings?.startYear ?? 2031,
+      },
     })) as unknown as LeanWorld;
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
@@ -182,10 +231,15 @@ function toWorldSummary(world: LeanWorld, provinceCount: number): WorldSummary {
       landOpacity: world.mapConfig?.landOpacity ?? 0.62,
     },
     simulationSettings: {
-      speed: world.simulationSettings?.speed ?? 'paused',
+      speed: (world.simulationSettings?.speed ?? DEFAULT_SPEED) as SimulationSpeed,
+      paused: world.simulationSettings?.paused ?? DEFAULT_PAUSED,
+      autoAdvance: world.simulationSettings?.autoAdvance ?? DEFAULT_AUTO_ADVANCE,
+      eventFrequency: (world.simulationSettings?.eventFrequency ??
+        DEFAULT_EVENT_FREQUENCY) as EventFrequency,
+      checkpointIntervalDays:
+        world.simulationSettings?.checkpointIntervalDays ?? DEFAULT_CHECKPOINT_INTERVAL_DAYS,
       difficulty: world.simulationSettings?.difficulty ?? 'standard',
       startYear: world.simulationSettings?.startYear ?? 2031,
-      autoAdvance: world.simulationSettings?.autoAdvance ?? false,
     },
     stats: {
       countryCount: world.countryCount,

@@ -1,4 +1,13 @@
 import { Schema, model, type HydratedDocument, type InferSchemaType } from 'mongoose';
+import {
+  DEFAULT_CHECKPOINT_INTERVAL_DAYS,
+  DEFAULT_EVENT_FREQUENCY,
+  DEFAULT_SPEED,
+  EVENT_FREQUENCIES,
+  MAX_CHECKPOINT_INTERVAL_DAYS,
+  MIN_CHECKPOINT_INTERVAL_DAYS,
+  SUPPORTED_SPEEDS,
+} from '../simulation/simulation.constants.js';
 
 const mapConfigSchema = new Schema(
   {
@@ -13,12 +22,40 @@ const mapConfigSchema = new Schema(
   { _id: false },
 );
 
+/**
+ * Simulation settings are part of the world document because the backend is
+ * the only authority on simulated time: a restart restores them from here.
+ */
 const simulationSettingsSchema = new Schema(
   {
-    speed: { type: String, default: 'paused' },
+    speed: { type: Number, enum: SUPPORTED_SPEEDS, default: DEFAULT_SPEED },
+    paused: { type: Boolean, default: false },
+    autoAdvance: { type: Boolean, default: true },
+    eventFrequency: {
+      type: String,
+      enum: EVENT_FREQUENCIES,
+      default: DEFAULT_EVENT_FREQUENCY,
+    },
+    checkpointIntervalDays: {
+      type: Number,
+      min: MIN_CHECKPOINT_INTERVAL_DAYS,
+      max: MAX_CHECKPOINT_INTERVAL_DAYS,
+      default: DEFAULT_CHECKPOINT_INTERVAL_DAYS,
+    },
     difficulty: { type: String, default: 'standard' },
     startYear: { type: Number, default: 2031 },
-    autoAdvance: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+/** Bookkeeping written on every committed tick, used for restart recovery. */
+const simulationStateSchema = new Schema(
+  {
+    lastTickAt: { type: Date, default: null },
+    lastDay: { type: Number, default: 0, min: 0 },
+    tickCount: { type: Number, default: 0, min: 0 },
+    lastCheckpointDay: { type: Number, default: null },
+    lastRestoredAt: { type: Date, default: null },
   },
   { _id: false },
 );
@@ -36,6 +73,7 @@ const worldSchema = new Schema(
     countryCount: { type: Number, required: true },
     continentCount: { type: Number, required: true },
     simulationSettings: { type: simulationSettingsSchema, required: true },
+    simulationState: { type: simulationStateSchema, default: () => ({}) },
   },
   { timestamps: true, versionKey: false, collection: 'worlds' },
 );

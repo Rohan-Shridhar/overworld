@@ -10,9 +10,12 @@ import {
   SOCKET_PING_TIMEOUT_MS,
 } from './constants.js';
 
-/** Event names shared with the client. Keep this list tiny until the simulation lands. */
+/** Event names shared with the client. */
 export const SOCKET_EVENTS = {
   SYSTEM_HELLO: 'system:hello',
+  SIMULATION_STATE: 'simulation:state',
+  SIMULATION_TICK: 'simulation:tick',
+  SIMULATION_EVENT: 'simulation:event',
 } as const;
 
 export interface SystemHelloPayload {

@@ -1,3 +1,4 @@
+import type { EventFrequency, SimulationSpeed } from '../simulation/simulation.constants.js';
 import type { Geometry, Position } from './generator/geometry.js';
 
 export interface GeoFeature<TProperties extends object> {
@@ -61,10 +62,13 @@ export interface WorldSummary {
     landOpacity: number;
   };
   simulationSettings: {
-    speed: string;
+    speed: SimulationSpeed;
+    paused: boolean;
+    autoAdvance: boolean;
+    eventFrequency: EventFrequency;
+    checkpointIntervalDays: number;
     difficulty: string;
     startYear: number;
-    autoAdvance: boolean;
   };
   stats: {
     countryCount: number;
