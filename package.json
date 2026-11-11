@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Geopolitical Sandbox: a full-stack simulation platform for modelling statecraft decisions.",
+  "type": "module",
   "workspaces": [
     "kalori",
     "server"

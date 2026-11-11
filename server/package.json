@@ -4,10 +4,10 @@
   "private": true,
   "description": "Express, Mongoose and Socket.IO API for Geopolitical Sandbox",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/app.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/mark-esm.mjs",
     "start": "node dist/server.js",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",

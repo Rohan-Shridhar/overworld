@@ -44,3 +44,10 @@ export function createApp(): Express {
 
   return app;
 }
+
+/**
+ * Default export for hosts that load a module and expect an Express app rather
+ * than a factory — Vercel's Express service is one. It creates no listener, so
+ * importing this module is still side-effect free for tests and `server.ts`.
+ */
+export default createApp();

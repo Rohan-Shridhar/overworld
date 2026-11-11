@@ -238,22 +238,36 @@ npm run build
 
 | Concern | Local development | Vercel |
 | --- | --- | --- |
-| Frontend | Vite dev server on `:5173` | Static assets from `kalori/dist` |
-| API | Express listener on `:5000` | One Node.js Function at `api/index.js` |
-| Routing | Vite proxy forwards `/api` | Rewrite sends `/api/*` to the function; every other path falls back to `index.html` |
+| Frontend | Vite dev server on `:5173` | `kalori` service (Vite framework), static assets |
+| API | Express listener on `:5000` | `server` service (Express framework) |
+| Routing | Vite proxy forwards `/api` | Root rewrite sends `/api/*` to the `server` service; everything else goes to `kalori` |
 | Simulation clock | Timer engine (`setInterval`-style scheduler) | Request-driven advancement over MongoDB |
 | Realtime | Socket.IO on the same HTTP server | HTTP polling (see below) |
 
-`api/index.js` imports the compiled `server/dist/app.js` and reuses `createApp()`, so
-middleware, validation, Helmet headers, request logging and the error envelope are
-identical in both environments. The function never calls `listen()`.
+The `server` service runs the compiled `server/dist` build, which shares `createApp()`
+with local development, so middleware, validation, Helmet headers, request logging and
+the error envelope are identical in both environments. No service calls `listen()`.
 
-### Why the entry point imports `server/dist`
+### Module system (ES Modules end to end)
 
-The server source uses NodeNext `.js` specifiers (`./app.js` for `app.ts`). Vercel's
-bundler does not rewrite those to the TypeScript sources, so the function targets the
-compiled output instead. `vercel.json` runs `npm run build` before functions are
-bundled, which produces `server/dist` and `kalori/dist`.
+The backend is ES Modules only: TypeScript compiles with `module: NodeNext`, every
+relative import carries a `.js` extension, and `server/package.json` declares
+`"type": "module"`.
+
+That declaration alone is not enough on Vercel. The Express service copies the build
+into a function bundle and executes the entry from `/var/task`, where
+`server/package.json` does not exist. Node therefore falls back to CommonJS and the
+first `import` fails with `Cannot use import statement outside a module`. Two guards
+prevent that:
+
+- the repository root `package.json` declares `"type": "module"`, so the app manifest
+  Vercel reads at runtime describes the backend correctly;
+- `npm run build --workspace server` writes `server/dist/package.json` with
+  `{"type": "module"}` via `server/scripts/mark-esm.mjs`, so the module system travels
+  with the compiled files themselves.
+
+`server/src/app.ts` also default-exports an app instance, because the Express service
+imports a module and expects an Express app, not a factory.
 
 ### Simulation progression
 
