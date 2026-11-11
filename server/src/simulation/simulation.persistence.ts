@@ -1,4 +1,4 @@
-import { Types } from 'mongoose';
+import type { Types } from 'mongoose';
 import { CountryModel } from '../models/country.model.js';
 import { ScheduledActionModel } from '../models/scheduled-action.model.js';
 import { SimulationCheckpointModel } from '../models/simulation-checkpoint.model.js';
@@ -87,9 +87,12 @@ export interface PersistTickInput {
   day: number;
   settings: SimulationSettings;
   updates: CountryDayUpdate[];
+  /** Real-time instant this tick is anchored to, not necessarily `now`. */
   lastTickAt: Date;
   lastCheckpointDay?: number | null;
   durationMs: number;
+  /** Persisted with the clock so snapshot reads stay cheap. */
+  stats?: SimulationStats;
 }
 
 /**
@@ -97,7 +100,7 @@ export interface PersistTickInput {
  * cannot leave half the world on yesterday's numbers.
  */
 export async function persistTick(input: PersistTickInput): Promise<void> {
-  const { worldId, day, settings, updates, lastTickAt, lastCheckpointDay, durationMs } = input;
+  const { worldId, day, settings, updates, lastTickAt, lastCheckpointDay, durationMs, stats } = input;
 
   const worldUpdate: Record<string, unknown> = {
     currentSimulationDate: fromDayIndex(day),
@@ -108,7 +111,12 @@ export async function persistTick(input: PersistTickInput): Promise<void> {
     'simulationSettings.checkpointIntervalDays': settings.checkpointIntervalDays,
     'simulationState.lastTickAt': lastTickAt,
     'simulationState.lastDay': day,
+    'simulationState.lastError': null,
   };
+
+  if (stats) {
+    worldUpdate['simulationState.lastStats'] = { ...stats };
+  }
 
   if (lastCheckpointDay != null) {
     worldUpdate['simulationState.lastCheckpointDay'] = lastCheckpointDay;

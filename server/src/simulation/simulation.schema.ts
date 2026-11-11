@@ -28,3 +28,13 @@ export const simulationEventsQuerySchema = z.object({
 });
 
 export type SimulationEventsQuery = z.infer<typeof simulationEventsQuerySchema>;
+
+/**
+ * Body for POST /api/simulation/advance. `maxDays` bounds how many overdue days
+ * one invocation may commit; the cap keeps a request inside the Hobby limit.
+ */
+export const simulationAdvanceSchema = z.object({
+  maxDays: z.number().int().min(1).max(20).optional(),
+});
+
+export type SimulationAdvanceBody = z.infer<typeof simulationAdvanceSchema>;

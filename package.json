@@ -1,10 +1,11 @@
+
 {
   "name": "geopolitical-sandbox",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Geopolitical Sandbox: a full-stack simulation platform for modelling statecraft decisions.",
   "workspaces": [
-    "client",
+    "kalori",
     "server"
   ],
   "engines": {
@@ -12,11 +13,11 @@
   },
   "scripts": {
     "dev": "concurrently --names api,web --prefix-colors yellow,cyan \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:client": "npm run dev --workspace client",
+    "dev:client": "npm run dev --workspace kalori",
     "dev:server": "npm run dev --workspace server",
-    "build": "npm run build --workspace server && npm run build --workspace client",
+    "build": "npm run build --workspace server && npm run build --workspace kalori",
     "start": "npm run start --workspace server",
-    "preview": "npm run preview --workspace client",
+    "preview": "npm run preview --workspace kalori",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",

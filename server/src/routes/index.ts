@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { API_PREFIX, APP_NAME, APP_VERSION } from '../config/constants.js';
 import { diplomacyRouter } from '../diplomacy/diplomacy.routes.js';
 import { eventRouter, snapshotRouter } from '../events/event.routes.js';
+import { simulationRouter } from '../simulation/simulation.routes.js';
 import { healthRouter } from './health.routes.js';
 import { worldRouter } from './world.routes.js';
 
@@ -25,6 +26,14 @@ apiRouter.get('/', (_req, res) => {
           path: `${API_PREFIX}/world/countries/:code`,
           description: 'Country detail with its provinces',
         },
+        { method: 'GET', path: `${API_PREFIX}/simulation`, description: 'Persisted world clock and settings' },
+        {
+          method: 'POST',
+          path: `${API_PREFIX}/simulation/advance`,
+          description: 'Advance overdue simulated days (bounded batch)',
+        },
+        { method: 'PATCH', path: `${API_PREFIX}/simulation`, description: 'Speed, pause and event cadence' },
+        { method: 'GET', path: `${API_PREFIX}/simulation/events`, description: 'Newest simulation events' },
       ],
     },
   });
@@ -35,3 +44,4 @@ apiRouter.use('/world', worldRouter);
 apiRouter.use('/diplomacy', diplomacyRouter);
 apiRouter.use('/events', eventRouter);
 apiRouter.use('/snapshots', snapshotRouter);
+apiRouter.use('/simulation', simulationRouter);

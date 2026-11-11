@@ -232,6 +232,123 @@ npm run test
 npm run build
 ```
 
+## Deploying to Vercel (Hobby)
+
+### Architecture on Vercel
+
+| Concern | Local development | Vercel |
+| --- | --- | --- |
+| Frontend | Vite dev server on `:5173` | Static assets from `kalori/dist` |
+| API | Express listener on `:5000` | One Node.js Function at `api/index.js` |
+| Routing | Vite proxy forwards `/api` | Rewrite sends `/api/*` to the function; every other path falls back to `index.html` |
+| Simulation clock | Timer engine (`setInterval`-style scheduler) | Request-driven advancement over MongoDB |
+| Realtime | Socket.IO on the same HTTP server | HTTP polling (see below) |
+
+`api/index.js` imports the compiled `server/dist/app.js` and reuses `createApp()`, so
+middleware, validation, Helmet headers, request logging and the error envelope are
+identical in both environments. The function never calls `listen()`.
+
+### Why the entry point imports `server/dist`
+
+The server source uses NodeNext `.js` specifiers (`./app.js` for `app.ts`). Vercel's
+bundler does not rewrite those to the TypeScript sources, so the function targets the
+compiled output instead. `vercel.json` runs `npm run build` before functions are
+bundled, which produces `server/dist` and `kalori/dist`.
+
+### Simulation progression
+
+MongoDB is the only authoritative clock. A world stores `currentSimulationDate`,
+`simulationSettings`, `simulationState.lastTickAt`, the tick ledger and periodic
+checkpoints.
+
+- `GET /api/simulation` returns the persisted snapshot. It never simulates.
+- `POST /api/simulation/advance` commits due days. It is idempotent per day: the
+  unique `(worldId, day)` index means a claim either wins or sees `duplicate`, so two
+  concurrent function instances cannot apply the same day twice.
+- Each call commits at most `SERVERLESS_MAX_DAYS_PER_REQUEST` (12) days inside a
+  6.5 s budget, and reports `advancedDays` and `remainingDays`.
+- **Nothing is dropped.** `simulationState.lastTickAt` advances by exactly the days
+  committed, never to "now", so a backlog that outlives one invocation is still
+  overdue when the next request arrives.
+- Pausing writes `lastTickAt = now`, so no backlog accrues while a world is stopped.
+- Deterministic seeds are unchanged (`sim:<worldId>:<day>:<country>`), so the same
+  world and day always produce the same outcome on any instance.
+- Scheduled actions, diplomacy maintenance and stability reviews run inside the same
+  day loop as the local engine.
+
+### Realtime fallback
+
+Socket.IO needs a process that outlives a request and a bus that is shared by every
+instance. Vercel gives neither for free (no Redis, no paid add-ons here). Therefore:
+
+- Socket.IO is created **only when the process is not serverless**, so local
+  development keeps working unchanged.
+- Production relies on HTTP polling: the frontend calls `/api/simulation` every 5
+  seconds, never with overlapping requests, pauses while the tab is hidden and clears
+  its interval on unmount.
+- Broadcasts are treated as an optimisation, never as the source of truth.
+
+### Vercel dashboard settings
+
+| Setting | Value |
+| --- | --- |
+| Framework preset | Other (detected automatically; `vercel.json` overrides build settings) |
+| Root directory | Repository root (`./`) |
+| Install command | `npm install` |
+| Build command | `npm run build` |
+| Output directory | `kalori/dist` |
+| Node.js version | 20.x or 22.x |
+| Function region | Closest to the Atlas cluster |
+
+### Adding `MONGODB_URI`
+
+1. Vercel → project → **Settings → Environment Variables**.
+2. Key: `MONGODB_URI`. Value: the Atlas connection string, including the database
+   name (for example `...mongodb.net/overworld?retryWrites=true&w=majority`).
+3. Apply to **Production**, **Preview** and **Development**.
+4. Do not add any other variable. Nothing else is read.
+5. Redeploy so the value reaches the function runtime.
+
+If the URI has no database path, Mongoose writes to the default `test` database.
+
+### Deploying from GitHub `main`
+
+1. Push the repository to GitHub.
+2. Vercel → **Add New → Project → Import Git Repository**.
+3. Leave the root directory at the repository root; let `vercel.json` drive the build.
+4. Add `MONGODB_URI` before the first deployment.
+5. In Atlas, allow Vercel egress: add `0.0.0.0/0` (simplest for Hobby) or Atlas's
+   Vercel integration.
+6. Deploy. Every later push to `main` deploys production; other branches and pull
+   requests deploy previews.
+7. Smoke test: `/api/health` (JSON, `data.database.status`), `/api/world`,
+   `/api/simulation`, then `POST /api/simulation/advance` with `{}`.
+
+### Known Hobby limitations
+
+- **Function duration** is 10 s, so an overdue backlog is committed in batches. The
+  response tells you how much remains.
+- **No shared Socket.IO bus**, so no server-push updates across instances. Polling is
+  the production mechanism.
+- **Cold starts** open a new Atlas connection. Concurrent requests on the same
+  instance share one in-flight attempt, and a warm instance reuses its pool.
+- **No cron substitute**: progression is only driven by requests. An idle world
+  pauses until someone calls the API again.
+- The API is unauthenticated. Anyone who can reach the URL can mutate the world.
+
+### Deployment checklist
+
+- [ ] `MONGODB_URI` set for Production, Preview and Development — and nothing else
+- [ ] Atlas cluster reachable from Vercel (network access entry)
+- [ ] `npm run build` succeeds locally
+- [ ] `server/dist/app.js` and `kalori/dist/index.html` are produced
+- [ ] `/api/health` returns `200` with `database.connected: true`
+- [ ] `/api/world` returns countries
+- [ ] `/api/simulation` returns a clock
+- [ ] `POST /api/simulation/advance` returns `advancedDays`
+- [ ] Refresh the page: the status bar shows a running clock, or a clear error
+- [ ] `/.env` is not committed
+
 ## Deliberate exclusions
 
 No Docker, no Redis, no PostgreSQL, no external auth provider, no AI APIs and no microservices. The

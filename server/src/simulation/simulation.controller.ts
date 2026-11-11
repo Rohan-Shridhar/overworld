@@ -1,7 +1,12 @@
 import type { Request, Response } from 'express';
 import { getValidatedBody, getValidatedQuery } from '../middleware/validate-request.js';
-import type { SimulationEventsQuery, SimulationSettingsBody } from './simulation.schema.js';
+import type {
+  SimulationAdvanceBody,
+  SimulationEventsQuery,
+  SimulationSettingsBody,
+} from './simulation.schema.js';
 import {
+  advanceSimulation,
   getSimulationEvents,
   getSimulationSnapshot,
   updateSimulationSettings,
@@ -29,4 +34,27 @@ export async function getSimulationEventsHandler(_request: Request, res: Respons
   const events = await getSimulationEvents(query?.limit);
 
   res.json({ success: true, data: { events } });
+}
+
+/**
+ * POST /api/simulation/advance — request-driven simulation progression.
+ *
+ * On Vercel this is the clock: the response reports `remainingDays` so the
+ * caller can ask again for the rest of an overdue backlog.
+ */
+export async function advanceSimulationHandler(_request: Request, res: Response): Promise<void> {
+  const body = getValidatedBody<SimulationAdvanceBody>(res);
+  const result = await advanceSimulation({ maxDays: body?.maxDays });
+
+  res.json({
+    success: true,
+    data: {
+      ...result.snapshot,
+      advancedDays: result.advancedDays,
+      remainingDays: result.remainingDays,
+      advancedEvents: result.events,
+      hitBatchLimit: result.hitBatchLimit,
+      hitTimeBudget: result.hitTimeBudget,
+    },
+  });
 }

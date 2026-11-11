@@ -56,6 +56,19 @@ const simulationStateSchema = new Schema(
     tickCount: { type: Number, default: 0, min: 0 },
     lastCheckpointDay: { type: Number, default: null },
     lastRestoredAt: { type: Date, default: null },
+    /**
+     * Headline statistics of the most recent committed tick. Stored so a
+     * serverless read can build a snapshot without re-aggregating every country.
+     */
+    lastStats: {
+      countries: { type: Number, default: 0 },
+      totalGdp: { type: Number, default: 0 },
+      averageStability: { type: Number, default: 0 },
+      averageGrowth: { type: Number, default: 0 },
+      eventsToday: { type: Number, default: 0 },
+    },
+    /** Last failure recorded by a request-driven advancement pass. */
+    lastError: { type: String, default: null },
   },
   { _id: false },
 );

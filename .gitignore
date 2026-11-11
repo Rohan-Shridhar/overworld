@@ -155,3 +155,4 @@ vite.config.ts.timestamp-*
 
 # Kombai workspace scratch
 .kombai/tmp/
+client/

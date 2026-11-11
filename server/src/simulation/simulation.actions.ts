@@ -1,7 +1,8 @@
 import type { Types } from 'mongoose';
 import { CountryModel } from '../models/country.model.js';
 import { ScheduledActionModel } from '../models/scheduled-action.model.js';
-import { MAX_ACTIONS_PER_TICK } from './simulation.constants.js';
+import { MAX_ACTIONS_PER_TICK, STABILITY_REVIEW_THRESHOLD } from './simulation.constants.js';
+import type { CountryDayUpdate } from './simulation.types.js';
 
 export interface ScheduledActionInput {
   worldId: Types.ObjectId;
@@ -129,4 +130,36 @@ export async function drainScheduledActions(
   }
 
   return { processed, notes };
+}
+
+/**
+ * Queues a stability review for every country that fell below the threshold.
+ * Shared by the timer engine and the request-driven path so both schedule the
+ * same follow-up work.
+ */
+export async function queueStabilityReviews(
+  worldId: Types.ObjectId,
+  input: { updates: CountryDayUpdate[]; namesByCode: Map<string, string>; day: number },
+): Promise<number> {
+  let queued = 0;
+
+  for (const update of input.updates) {
+    if (update.stability > STABILITY_REVIEW_THRESHOLD) continue;
+
+    const countryName = input.namesByCode.get(update.code);
+    if (!countryName) continue;
+
+    if (await hasPendingAction(worldId, 'country.review', update.code)) continue;
+
+    await enqueueScheduledAction({
+      worldId,
+      dueDay: input.day + 1,
+      type: 'country.review',
+      payload: { countryCode: update.code, countryName, stability: update.stability },
+    });
+
+    queued += 1;
+  }
+
+  return queued;
 }

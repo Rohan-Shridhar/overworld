@@ -54,3 +54,62 @@ export const SOCKET_PING_TIMEOUT_MS = 20_000;
 export const isProduction = (): boolean => process.env.NODE_ENV === 'production';
 
 export const isTest = (): boolean => process.env.NODE_ENV === 'test';
+
+/**
+ * True when running inside a Vercel Function.
+ *
+ * `VERCEL` is injected by the platform, not configured by this application, so
+ * `MONGODB_URI` remains the only variable an operator has to set.
+ */
+export const isServerlessRuntime = (): boolean => process.env.VERCEL === '1';
+
+/** Hosts (beyond localhost) whose browser origin may call the API. */
+export const ALLOWED_ORIGIN_SUFFIXES = ['.vercel.app'] as const;
+
+/**
+ * Request origin allow-list.
+ *
+ * A missing origin is allowed: same-origin GETs, server-to-server calls and
+ * curl send none. Localhost stays available for development, and the project's
+ * own `*.vercel.app` deployments (production and previews) are allowed so the
+ * static frontend can call its own origin without a wildcard.
+ */
+export function isAllowedOrigin(origin?: string | null): boolean {
+  if (!origin) return true;
+
+  if (ALLOWED_ORIGINS.some((allowed) => allowed === origin)) return true;
+
+  try {
+    const url = new URL(origin);
+
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+
+    return ALLOWED_ORIGIN_SUFFIXES.some(
+      (suffix) => url.hostname === suffix.slice(1) || url.hostname.endsWith(suffix),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Days committed by one serverless invocation.
+ *
+ * Vercel Hobby caps a function at 10 seconds, so a single request processes a
+ * small batch and leaves the rest overdue. The backlog is never discarded:
+ * `simulationState.lastTickAt` only advances by the days actually committed.
+ */
+export const SERVERLESS_MAX_DAYS_PER_REQUEST = 12 as const;
+
+/** Wall-clock budget for the advancement pass, leaving room to serialise a response. */
+export const SERVERLESS_TIME_BUDGET_MS = 6_500 as const;
+
+/** Atlas selection timeout used inside a function, where a slow query is fatal. */
+export const DB_SERVERLESS_SELECTION_TIMEOUT_MS = 8_000 as const;
+
+/** One attempt per invocation: a retry loop cannot fit inside a function budget. */
+export const DB_SERVERLESS_MAX_ATTEMPTS = 1 as const;
+
+/** How long Mongoose buffers an operation while the socket is still connecting. */
+export const DB_BUFFER_TIMEOUT_MS = 5_000 as const;
+

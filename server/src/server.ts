@@ -8,12 +8,14 @@ import {
   SERVER_HOST,
   SERVER_PORT,
   SOCKET_PATH,
+  isServerlessRuntime,
   isTest,
 } from './config/constants.js';
 import { connectDatabase } from './config/database.js';
 import { EnvValidationError, getEnv } from './config/env.js';
 import { shutdown } from './config/shutdown.js';
 import { createSocketServer } from './config/socket.js';
+import { startSimulation } from './simulation/simulation.service.js';
 import { logger } from './lib/logger.js';
 
 const SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
@@ -52,7 +54,11 @@ export async function bootstrap(): Promise<void> {
   }
 
   const httpServer = createServer(createApp());
-  createSocketServer(httpServer);
+
+  // Socket.IO needs a listener that outlives a single request. A serverless
+  // function has none, so realtime is local-only and production uses HTTP
+  // polling against the same endpoints.
+  if (!isServerlessRuntime()) createSocketServer(httpServer);
 
   await listen(httpServer);
 
@@ -80,11 +86,22 @@ export async function bootstrap(): Promise<void> {
   });
 
   // Connect after the listener is up so /api/health can report progress immediately.
-  void connectDatabase(mongoUri).catch((error: unknown) => {
-    logger.error('Database bootstrap failed', {
-      error: error instanceof Error ? error : String(error),
+  void connectDatabase(mongoUri)
+    .then(async (connected) => {
+      if (!connected || isServerlessRuntime()) return;
+
+      // Only a long-lived process may own the timer; serverless advances on request.
+      const snapshot = await startSimulation();
+
+      if (!snapshot) {
+        logger.warn('Simulation engine did not start; the world clock is idle');
+      }
+    })
+    .catch((error: unknown) => {
+      logger.error('Database bootstrap failed', {
+        error: error instanceof Error ? error : String(error),
+      });
     });
-  });
 }
 
 const isDirectRun =

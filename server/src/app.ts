@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
-import { ALLOWED_ORIGINS, API_PREFIX, REQUEST_BODY_LIMIT } from './config/constants.js';
+import { API_PREFIX, REQUEST_BODY_LIMIT, isAllowedOrigin } from './config/constants.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { apiRouter } from './routes/index.js';
@@ -21,9 +21,13 @@ export function createApp(): Express {
     }),
   );
 
+  // Same-origin deployments send no Origin on reads and are allowed implicitly;
+  // explicit origins are checked against the allow-list instead of a wildcard.
   app.use(
     cors({
-      origin: [...ALLOWED_ORIGINS],
+      origin: (origin, callback) => {
+        callback(null, isAllowedOrigin(origin));
+      },
       methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
       credentials: false,
     }),

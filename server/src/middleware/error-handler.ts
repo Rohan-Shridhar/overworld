@@ -65,6 +65,25 @@ function normaliseError(error: unknown): NormalisedError {
     };
   }
 
+  /*
+   * A serverless instance can accept a request before its Mongo socket is up.
+   * Mongoose then either buffers past the timeout or reports a closed
+   * connection; both mean "retry shortly", not "the request was invalid".
+   */
+  if (
+    error instanceof Error &&
+    /buffering timed out|client must be connected|connection .* was disconnected|connection is not open/i.test(
+      error.message,
+    )
+  ) {
+    return {
+      statusCode: 503,
+      code: 'DATABASE_UNAVAILABLE',
+      message: 'The database is not ready yet; retry in a moment',
+      isOperational: true,
+    };
+  }
+
   if (error instanceof SyntaxError && 'body' in error) {
     return {
       statusCode: 400,
