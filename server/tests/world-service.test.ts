@@ -7,13 +7,18 @@ const mocks = vi.hoisted(() => ({
   countryInsertMany: vi.fn(),
   provinceInsertMany: vi.fn(),
   countryFind: vi.fn(),
+  worldCollectionUpdateMany: vi.fn(),
   countryUpdateOne: vi.fn(),
   provinceFind: vi.fn(),
   provinceAggregate: vi.fn(),
 }));
 
 vi.mock('../src/models/world.model.js', () => ({
-  WorldModel: { findOne: mocks.worldFindOne, create: mocks.worldCreate },
+  WorldModel: {
+    findOne: mocks.worldFindOne,
+    create: mocks.worldCreate,
+    collection: { updateMany: mocks.worldCollectionUpdateMany },
+  },
 }));
 
 vi.mock('../src/models/country.model.js', () => ({
@@ -59,6 +64,7 @@ describe('world persistence', () => {
     resetWorldCache();
 
     mocks.worldFindOne.mockReturnValue({ lean: async () => null });
+    mocks.worldCollectionUpdateMany.mockResolvedValue({ modifiedCount: 0 });
     mocks.worldCreate.mockImplementation(async (document: Record<string, unknown>) => ({
       ...document,
       _id: worldId,

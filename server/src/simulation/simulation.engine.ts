@@ -8,6 +8,8 @@ import {
   enqueueScheduledAction,
   hasPendingAction,
 } from './simulation.actions.js';
+import { runDiplomacyMaintenance } from '../diplomacy/diplomacy.maintenance.js';
+import { getDiplomacyModifiers } from '../diplomacy/treaty.service.js';
 import { clockOf, elapsedDays, nextTickAt, toDayIndex } from './simulation.clock.js';
 import {
   DEFAULT_AUTO_ADVANCE,
@@ -442,10 +444,12 @@ export class SimulationEngine {
         throw new Error('The world has no countries to simulate');
       }
 
+      const modifiers = await getDiplomacyModifiers(worldId);
       const updates = countries.map((country) =>
         simulateCountryDay(
           country,
           createRandom(`${this.seedKey(worldId)}:${day}:${country.code}`),
+          modifiers.get(country.code),
         ),
       );
 
@@ -479,6 +483,7 @@ export class SimulationEngine {
       }
 
       await drainScheduledActions(worldId, day);
+      await runDiplomacyMaintenance(worldId, day);
       await this.queueStabilityReviews(worldId, countries, updates, day);
 
       this.day = day;

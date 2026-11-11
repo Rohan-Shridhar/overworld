@@ -107,7 +107,7 @@ export const NEGOTIATION = {
     trust: 0.3,
     trade: 0.18,
     strategic: 0.12,
-    threat: -0.32,
+    threat: 0.32,
     obligation: -0.22,
     concession: 0.16,
   },

@@ -122,14 +122,27 @@ const EVENT_TEMPLATES: EventTemplate[] = [
  * Pure and deterministic: the same state plus the same seeded random stream
  * always produces the same next state, which is what makes replay safe.
  */
+export interface DiplomacyModifiers {
+  growth: number;
+  stability: number;
+  trade: number;
+}
+
+const NO_MODIFIERS: DiplomacyModifiers = { growth: 0, stability: 0, trade: 0 };
+
 export function simulateCountryDay(
   country: CountryDayState,
   random: SeededRandom,
+  modifiers: DiplomacyModifiers = NO_MODIFIERS,
 ): CountryDayUpdate {
   const { gdpGrowth, inflation, debt, tradeBalance } = country;
 
   const growthTarget =
-    2.1 - (debt - 45) * 0.012 + (country.stability - 50) * 0.021 + (tradeBalance > 0 ? 0.25 : -0.2);
+    2.1 -
+    (debt - 45) * 0.012 +
+    (country.stability - 50) * 0.021 +
+    (tradeBalance > 0 ? 0.25 : -0.2) +
+    modifiers.growth * 10;
   const nextGrowth = clamp(
     gdpGrowth * 0.92 + growthTarget * 0.08 + random.range(-0.22, 0.22),
     -8,
@@ -151,7 +164,10 @@ export function simulateCountryDay(
 
   const nextTradeBalance = round(
     clamp(
-      tradeBalance * 0.97 + (nextGrowth > 0 ? 0.12 : -0.1) + random.range(-0.4, 0.4),
+      tradeBalance * 0.97 +
+        (nextGrowth > 0 ? 0.12 : -0.1) +
+        modifiers.trade +
+        random.range(-0.4, 0.4),
       -country.gdp * 0.4,
       country.gdp * 0.4,
     ),
@@ -166,7 +182,7 @@ export function simulateCountryDay(
     (country.stability - 55) * 0.014;
 
   const nextStability = clamp(
-    country.stability - pressure * 0.55 + random.range(-0.3, 0.3),
+    country.stability - pressure * 0.55 + modifiers.stability + random.range(-0.3, 0.3),
     4,
     99,
   );
