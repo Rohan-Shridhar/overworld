@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { API_PREFIX, APP_NAME, APP_VERSION } from '../config/constants.js';
 import { diplomacyRouter } from '../diplomacy/diplomacy.routes.js';
+import { eventRouter, snapshotRouter } from '../events/event.routes.js';
 import { healthRouter } from './health.routes.js';
 import { worldRouter } from './world.routes.js';
 
@@ -32,3 +33,5 @@ apiRouter.get('/', (_req, res) => {
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/world', worldRouter);
 apiRouter.use('/diplomacy', diplomacyRouter);
+apiRouter.use('/events', eventRouter);
+apiRouter.use('/snapshots', snapshotRouter);
